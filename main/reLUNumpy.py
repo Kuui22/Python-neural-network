@@ -1,6 +1,6 @@
 import numpy as np
 from numpy.random import MT19937, RandomState, SeedSequence
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 #np.random.seed(0) legacy
 
 seed_sequence = np.random.SeedSequence()
