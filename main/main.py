@@ -7,7 +7,8 @@ seed_sequence = np.random.SeedSequence()
 rs = RandomState(MT19937(seed_sequence))
 
 
-# TODO:
+# TODO:backpropagation
+
 def spiral_data(points, classes):
     X = np.zeros((points * classes, 2))
     y = np.zeros(points * classes, dtype="uint8")
@@ -25,7 +26,7 @@ def spiral_data(points, classes):
 
 class Layer_Dense:
     def __init__(self, n_inputs, n_neurons) -> None:
-        self.weights = 0.10 * rs.randn(
+        self.weights = 0.01 * rs.randn(
             n_inputs, n_neurons
         )  # makes a matrix where rows = n inputs and cols = n neurons
         self.biases = np.zeros(
