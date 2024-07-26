@@ -24,7 +24,8 @@ def spiral_data(points, classes):
 
 class Layer_Dense:
     def __init__(self, n_inputs, n_neurons) -> None:
-        self.weights = 0.01 * rs.randn(n_inputs, n_neurons)  # makes a matrix where rows = n inputs and cols = n neurons
+        #He Initialization
+        self.weights = np.sqrt(2.0 / n_inputs) * rs.randn(n_inputs, n_neurons)  # makes a matrix where rows = n inputs and cols = n neurons
         self.biases = np.zeros((1, n_neurons))  # make an array long as the number of neurons (number of outputs)
         self.n_neurons = n_neurons
         self.n_inputs = n_inputs
@@ -46,7 +47,8 @@ class Layer_Dense:
         
         self.clip_gradients()
 
-    def clip_gradients(self, max_norm=2.0):
+    def clip_gradients(self, max_norm=5.0):
+        #This norm is a measure of the magnitude of the gradient vector.
         norm = np.linalg.norm(self.dweights)
         if norm > max_norm:
             self.dweights = self.dweights * max_norm / norm
@@ -157,10 +159,10 @@ def predict(softmax_outputs, targets):
 X, y = spiral_data(points=100, classes=3)
 
 
-dense1 = Layer_Dense(2, 64)# n_inputs = number of dimensions of input
-dense2 = Layer_Dense(64, 64)
-dense3 = Layer_Dense(64, 64)
-dense4 = Layer_Dense(64, 3)  # output layer neurons = number of classes
+dense1 = Layer_Dense(2, 256)# n_inputs = number of dimensions of input
+dense2 = Layer_Dense(256, 256)
+dense3 = Layer_Dense(256, 128)
+dense4 = Layer_Dense(128, 3)  # output layer neurons = number of classes
 '''
 dense1.forward(X, activation=Activation_ReLU())
 dense2.forward(dense1.output, activation=Activation_Softmax())
@@ -209,7 +211,7 @@ for iteration in range(100000):
 '''
 loss_function = Loss_CategoricalCrossentropy()
 lowest_loss = 999999
-learning_rate = 0.001
+learning_rate = 1e-5
 activation1=Activation_ReLU()
 activation2=Activation_ReLU()
 activation3=Activation_ReLU()
@@ -229,10 +231,10 @@ for epoch in range(epochs):
 
     # print(f"Loss:{loss},Accuracy:{accuracy}")
     if loss < lowest_loss:
-        print(f"New record:Iteration:{epoch}, Loss:{loss}, Accuracy:{accuracy}")
+        #print(f"New record:Iteration:{epoch}, Loss:{loss}, Accuracy:{accuracy}")
         lowest_loss = loss
     if epoch % 1000 == 0:
-        print(f'Epoch {epoch}, Loss: {loss}, Accuracy: {accuracy}')
+        print(f'Epoch {epoch}, Loss: {loss}, Accuracy: {accuracy}, Lowest Loss:{lowest_loss}')
         
     loss_function.backward(activation4.output,y)
     dense4.backward(loss_function.dinputs)
