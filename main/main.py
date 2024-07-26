@@ -26,6 +26,8 @@ class Layer_Dense:
     def __init__(self, n_inputs, n_neurons) -> None:
         self.weights = 0.01 * rs.randn(n_inputs, n_neurons)  # makes a matrix where rows = n inputs and cols = n neurons
         self.biases = np.zeros((1, n_neurons))  # make an array long as the number of neurons (number of outputs)
+        self.n_neurons = n_neurons
+        self.n_inputs = n_inputs
 
     def forward(self, inputs, activation=None) -> None:
         self.output = np.dot(inputs, self.weights) + self.biases  # base dot operation + biases
@@ -54,7 +56,8 @@ class Loss:
         data_loss = np.mean(sample_losses)
         return data_loss
 
-'''
+
+"""
 example shape=1
 scalar class values
 [0,1,1]
@@ -64,26 +67,28 @@ one hot encoded
  [0,0,1],
  [1,0,0]]
 so everything that isn't the target gets nulled
-'''
+"""
+
 
 class Loss_CategoricalCrossentropy(Loss):
     def forward(self, y_pred, y_true):
         samples = len(y_pred)
         y_pred_clipped = np.clip(y_pred, 1e-7, 1 - 1e-7)
-        
+
         if len(y_true.shape) == 1:
-            correct_confidences = y_pred_clipped[range(samples), y_true] #grab the element of row x of range samples equal to row x of y_true
-        elif len(y_true.shape) == 2: #if hot encoded, its a matrix
-            correct_confidences == np.sum(y_pred_clipped*y_true, axis=1) #multiply each element in a row of y_pred * element in the same position of y_true
-        
-        negative_log_likelihoods = -np.log(correct_confidences) #simplified cross entropy
+            correct_confidences = y_pred_clipped[range(samples), y_true]  # grab the element of row x of range samples equal to row x of y_true
+        elif len(y_true.shape) == 2:  # if hot encoded, its a matrix
+            correct_confidences == np.sum(y_pred_clipped * y_true, axis=1)  # multiply each element in a row of y_pred * element in the same position of y_true
+
+        negative_log_likelihoods = -np.log(correct_confidences)  # simplified cross entropy
         return negative_log_likelihoods
 
 
-def calculate_accuracy(softmax_outputs, targets):
+def predict(softmax_outputs, targets):
     predictions = np.argmax(softmax_outputs, axis=1)
-    accuracy = np.mean(predictions == targets) # where predictions[x] == targets [x]
+    accuracy = np.mean(predictions == targets)  # where predictions[x] == targets [x]
     return accuracy
+
 
 X, y = spiral_data(points=100, classes=3)
 
@@ -94,10 +99,43 @@ dense2 = Layer_Dense(3, 3)  # output layer neurons = number of classes
 dense1.forward(X, activation=Activation_ReLU())
 dense2.forward(dense1.output, activation=Activation_Softmax())
 
-print(dense2.output[:5])
+# print(dense2.output[:5])
 
 loss_function = Loss_CategoricalCrossentropy()
 loss = loss_function.calculate(dense2.output, y)
-accuracy = calculate_accuracy(dense2.output, y)
+accuracy = predict(dense2.output, y)
 print(f"Loss:{loss}")
 print(f"Accuracy:{accuracy}")
+
+lowest_loss = loss
+best_dense1_weights = dense1.weights.copy()
+best_dense1_biases = dense1.biases.copy()
+best_dense2_weights = dense2.weights.copy()
+best_dense2_biases = dense2.biases.copy()
+
+#random search
+for iteration in range(100000):
+    dense1.weights += 0.05 * rs.randn(dense1.n_inputs, dense1.n_neurons)
+    dense1.biases += 0.05 * rs.randn(1, dense1.n_neurons)
+    dense2.weights += 0.05 * rs.randn(dense2.n_inputs, dense2.n_neurons)
+    dense2.biases += 0.05 * rs.randn(1, dense2.n_neurons)
+
+    dense1.forward(X, activation=Activation_ReLU())
+    dense2.forward(dense1.output, activation=Activation_Softmax())
+    loss = loss_function.calculate(dense2.output, y)
+    accuracy = predict(dense2.output, y)
+
+    #print(f"Loss:{loss},Accuracy:{accuracy}")
+
+    if loss < lowest_loss:
+        print(f"New record:Iteration:{iteration}, Loss:{loss}, Accuracy:{accuracy}")
+        best_dense1_weights = dense1.weights.copy()
+        best_dense1_biases = dense1.biases.copy()
+        best_dense2_weights = dense2.weights.copy()
+        best_dense2_biases = dense2.biases.copy()
+        lowest_loss = loss
+    else:
+        dense1.weights = best_dense1_weights.copy()
+        dense1.biases = best_dense1_biases.copy()
+        dense2.weights = best_dense2_weights.copy()
+        dense2.biases = best_dense2_biases.copy()
