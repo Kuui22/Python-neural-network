@@ -29,7 +29,7 @@ class Layer_Dense:
         self.biases = np.zeros((1, n_neurons))  # make an array long as the number of neurons (number of outputs)
         self.n_neurons = n_neurons
         self.n_inputs = n_inputs
-        
+
         self.dweights = np.zeros_like(self.weights)
         self.dbiases = np.zeros_like(self.biases)
 
@@ -48,9 +48,9 @@ class Layer_Dense:
         # Gradient on values
         self.dinputs = np.dot(dvalues, self.weights.T)
 
-        self.clip_gradients()
+        # self.clip_gradients()
 
-    def clip_gradients(self, max_norm=6.0):
+    def clip_gradients(self, max_norm=9.0):
         # This norm is a measure of the magnitude of the gradient vector.
         norm = np.linalg.norm(self.dweights)
         if norm > max_norm:
@@ -99,7 +99,7 @@ class Activation_Leaky_ReLU:
         self.dinputs = dvalues.copy()
 
         # Zero gradient where input values were negative
-        self.dinputs[self.inputs <= 0] * self.alpha
+        self.dinputs[self.inputs <= 0] *= self.alpha
 
 
 class Activation_Softmax:
@@ -155,7 +155,7 @@ class Loss_CategoricalCrossentropy(Loss):
         if len(y_true.shape) == 1:
             correct_confidences = y_pred_clipped[range(samples), y_true]  # grab the element of row x of range samples equal to row x of y_true
         elif len(y_true.shape) == 2:  # if hot encoded, its a matrix
-            correct_confidences == np.sum(y_pred_clipped * y_true, axis=1)  # multiply each element in a row of y_pred * element in the same position of y_true
+            correct_confidences = np.sum(y_pred_clipped * y_true, axis=1)  # multiply each element in a row of y_pred * element in the same position of y_true
 
         negative_log_likelihoods = -np.log(correct_confidences)  # simplified cross entropy
         return negative_log_likelihoods
@@ -201,7 +201,7 @@ class AdamOptimizer:
     def update(self):
         self.t += 1
         lr_t = self.learning_rate * np.sqrt(1 - self.beta2**self.t) / (1 - self.beta1**self.t)
-        
+
         for i, layer in enumerate(self.layers):
             # Update weights
             self.m_weights[i] = self.beta1 * self.m_weights[i] + (1 - self.beta1) * layer.dweights
@@ -209,7 +209,7 @@ class AdamOptimizer:
             m_hat = self.m_weights[i] / (1 - self.beta1**self.t)
             v_hat = self.v_weights[i] / (1 - self.beta2**self.t)
             layer.weights -= lr_t * m_hat / (np.sqrt(v_hat) + self.epsilon)
-            
+
             # Update biases
             self.m_biases[i] = self.beta1 * self.m_biases[i] + (1 - self.beta1) * layer.dbiases
             self.v_biases[i] = self.beta2 * self.v_biases[i] + (1 - self.beta2) * (layer.dbiases**2)
@@ -218,54 +218,110 @@ class AdamOptimizer:
             layer.biases -= lr_t * m_hat_bias / (np.sqrt(v_hat_bias) + self.epsilon)
 
 
-
 X, y = spiral_data(points=100, classes=3)
+# Normalize input data
+X_mean = np.mean(X, axis=0)
+X_std = np.std(X, axis=0) + 1e-8  #avoid dividing by zero
+X_normalized = (X - X_mean) / X_std
+
 lowest_loss = 999999
-learning_rate = 1e-3
+initial_learning_rate = 0.0001
+#decay rate of the learning rate
+decay_rate = 0.1
+decay_steps = 1000
+
 loss_function = Loss_CategoricalCrossentropy()
 
 
-dense1 = Layer_Dense(2, 256)  # n_inputs = number of dimensions of input
-dense2 = Layer_Dense(256, 256)
-dense3 = Layer_Dense(256, 128)
-dense4 = Layer_Dense(128, 3)  # output layer neurons = number of classes
+dense1 = Layer_Dense(2, 128)  # n_inputs = number of dimensions of input
+dense2 = Layer_Dense(128, 64)
+dense3 = Layer_Dense(64, 32)
+dense4 = Layer_Dense(32, 3)  # output layer neurons = number of classes
 
+# Add L2 regularization, this gets applied to weights to avoid vanishing
+l2_lambda = 0.001
 
-optimizer = AdamOptimizer([dense1, dense2, dense3, dense4])
+optimizer = AdamOptimizer([dense1, dense2, dense3, dense4], learning_rate=initial_learning_rate)
 
 activation1 = Activation_Leaky_ReLU()
 activation2 = Activation_Leaky_ReLU()
-activation3 = Activation_ReLU()
+activation3 = Activation_Leaky_ReLU()
 activation4 = Activation_Softmax()
-epochs = 10000
+epochs = 100000
+
+# Implement mini-batch processing
+batch_size = 32
+
 for epoch in range(epochs):
-    dense1.forward(X)
-    activation1.forward(dense1.output)
-    dense2.forward(activation1.output)
-    activation2.forward(dense2.output)
-    dense3.forward(activation2.output)
-    activation3.forward(dense3.output)
-    dense4.forward(activation3.output)
-    activation4.forward(dense4.output)
-    loss = loss_function.calculate(activation4.output, y)
-    accuracy = predict(activation4.output, y)
+    # Shuffle the data
+    indices = np.arange(X_normalized.shape[0])
+    np.random.shuffle(indices)
+    X_shuffled = X_normalized[indices]
+    y_shuffled = y[indices]
 
-    if loss < lowest_loss:
-        # print(f"New record:Iteration:{epoch}, Loss:{loss}, Accuracy:{accuracy}")
-        lowest_loss = loss
+    epoch_loss = 0
+    epoch_accuracy = 0
+    num_batches = 0
+
+
+    for i in range(0, X_normalized.shape[0], batch_size):
+        X_batch = X_shuffled[i : i + batch_size]
+        y_batch = y_shuffled[i : i + batch_size]
+
+        # Forward pass
+        dense1.forward(X_batch)
+        activation1.forward(dense1.output)
+        dense2.forward(activation1.output)
+        activation2.forward(dense2.output)
+        dense3.forward(activation2.output)
+        activation3.forward(dense3.output)
+        dense4.forward(activation3.output)
+        activation4.forward(dense4.output)
+        loss = loss_function.calculate(activation4.output, y_batch)
+        accuracy = predict(activation4.output, y_batch)
+        
+        
+        epoch_loss += loss
+        epoch_accuracy += accuracy
+        num_batches += 1
+        
+        
+        loss_function.backward(activation4.output, y_batch)
+        dense4.backward(loss_function.dinputs)
+        activation3.backward(dense4.dinputs)
+        dense3.backward(activation3.dinputs)
+        activation2.backward(dense3.dinputs)
+        dense2.backward(activation2.dinputs)
+        activation1.backward(dense2.dinputs)
+        dense1.backward(activation1.dinputs)
+        # L2 regularization (weight decay)
+        for layer in [dense1, dense2, dense3, dense4]:
+            layer.dweights += 2 * l2_lambda * layer.weights
+
+
+
+        optimizer.update()
+
+        dense1.clip_gradients()
+        dense2.clip_gradients()
+        dense3.clip_gradients()
+        dense4.clip_gradients()
+
+    epoch_loss /= num_batches
+    epoch_accuracy /= num_batches
+    
+    # Learning rate decay
+    current_learning_rate = initial_learning_rate * (1.0 / (1.0 + decay_rate * epoch / decay_steps))
+    optimizer.learning_rate = current_learning_rate
+
+    if epoch_loss < lowest_loss:
+        lowest_loss = epoch_loss
+        
     if epoch % 100 == 0:
-        learning_rate *= 0.8
-        print(f"Epoch {epoch}, Loss: {loss}, Accuracy: {accuracy}, Lowest Loss:{lowest_loss}")
-    loss_function.backward(activation4.output, y)
-    dense4.backward(loss_function.dinputs)
-    activation3.backward(dense4.dinputs)
-    dense3.backward(activation3.dinputs)
-    activation2.backward(dense3.dinputs)
-    dense2.backward(activation2.dinputs)
-    activation1.backward(dense2.dinputs)
-    dense1.backward(activation1.dinputs)
+        print(f"Epoch {epoch}, Loss: {epoch_loss}, Accuracy: {epoch_accuracy}, Lowest Loss:{lowest_loss}")
+    
 
-    optimizer.update()
+
 """
     dense1.weights -= learning_rate * dense1.dweights
     dense1.biases -= learning_rate * dense1.dbiases
