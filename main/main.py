@@ -16,10 +16,7 @@ def spiral_data(points, classes):
     for class_number in range(classes):
         ix = range(points * class_number, points * (class_number + 1))
         r = np.linspace(0.0, 1, points)  # radius
-        t = (
-            np.linspace(class_number * 4, (class_number + 1) * 4, points)
-            + np.random.randn(points) * 0.2
-        )
+        t = np.linspace(class_number * 4, (class_number + 1) * 4, points) + np.random.randn(points) * 0.2
         X[ix] = np.c_[r * np.sin(t * 2.5), r * np.cos(t * 2.5)]
         y[ix] = class_number
     return X, y
@@ -28,21 +25,18 @@ def spiral_data(points, classes):
 class Layer_Dense:
     def __init__(self, n_inputs, n_neurons) -> None:
         # He Initialization
-        self.weights = np.sqrt(2.0 / n_inputs) * rs.randn(
-            n_inputs, n_neurons
-        )  # makes a matrix where rows = n inputs and cols = n neurons
-        self.biases = np.zeros(
-            (1, n_neurons)
-        )  # make an array long as the number of neurons (number of outputs)
+        self.weights = np.sqrt(2.0 / n_inputs) * rs.randn(n_inputs, n_neurons)  # makes a matrix where rows = n inputs and cols = n neurons
+        self.biases = np.zeros((1, n_neurons))  # make an array long as the number of neurons (number of outputs)
         self.n_neurons = n_neurons
         self.n_inputs = n_inputs
+        
+        self.dweights = np.zeros_like(self.weights)
+        self.dbiases = np.zeros_like(self.biases)
 
     def forward(self, inputs, activation=None) -> None:
         # save inputs for backwards
         self.inputs = inputs
-        self.output = (
-            np.dot(inputs, self.weights) + self.biases
-        )  # base dot operation + biases
+        self.output = np.dot(inputs, self.weights) + self.biases  # base dot operation + biases
         # print(f"activation is:{activation}")
         if activation:
             self.output = activation.forward(self.output)
@@ -65,6 +59,12 @@ class Layer_Dense:
         if norm > max_norm:
             self.dbiases = self.dbiases * max_norm / norm
 
+    def get_parameters(self):
+        return [self.weights, self.biases]
+
+    def get_gradients(self):
+        return [self.dweights, self.dbiases]
+
 
 class Activation_ReLU:
     def forward(self, inputs):
@@ -83,14 +83,14 @@ class Activation_ReLU:
 
 
 class Activation_Leaky_ReLU:
-    def __init__(self,alpha=0.01) -> None:
+    def __init__(self, alpha=0.01) -> None:
         self.alpha = alpha
-    
+
     def forward(self, inputs):
         # Remember input values
         self.inputs = inputs
-        #np.where(condition, if_true, if_false)
-        self.output = np.where(inputs > 0, inputs, self.alpha * inputs)  # input if < 0 or input*alpha if < 0 
+        # np.where(condition, if_true, if_false)
+        self.output = np.where(inputs > 0, inputs, self.alpha * inputs)  # input if < 0 or input*alpha if < 0
         return self.output
 
     def backward(self, dvalues):
@@ -99,19 +99,15 @@ class Activation_Leaky_ReLU:
         self.dinputs = dvalues.copy()
 
         # Zero gradient where input values were negative
-        self.dinputs[self.inputs <= 0] *self.alpha
+        self.dinputs[self.inputs <= 0] * self.alpha
 
 
 class Activation_Softmax:
     def forward(self, inputs):
         # Remember input values
         self.inputs = inputs
-        exp_values = np.exp(
-            inputs - np.max(inputs, axis=1, keepdims=True)
-        )  # exponential of e for every (value in row - max value of row[to avoid overflow])
-        probabilities = exp_values / np.sum(
-            exp_values, axis=1, keepdims=True
-        )  # value in row / sum of all values in row
+        exp_values = np.exp(inputs - np.max(inputs, axis=1, keepdims=True))  # exponential of e for every (value in row - max value of row[to avoid overflow])
+        probabilities = exp_values / np.sum(exp_values, axis=1, keepdims=True)  # value in row / sum of all values in row
         self.output = probabilities
         return self.output
 
@@ -120,20 +116,15 @@ class Activation_Softmax:
         self.dinputs = np.empty_like(dvalues)
 
         # Enumerate outputs and gradients
-        for index, (single_output, single_dvalues) in enumerate(
-            zip(self.output, dvalues)
-        ):
+        for index, (single_output, single_dvalues) in enumerate(zip(self.output, dvalues)):
             # Flatten output array
             single_output = single_output.reshape(-1, 1)
             # Calculate Jacobian matrix of the output
-            jacobian_matrix = np.diagflat(single_output) - np.dot(
-                single_output, single_output.T
-            )
+            jacobian_matrix = np.diagflat(single_output) - np.dot(single_output, single_output.T)
 
             # Calculate sample-wise gradient
             # and add it to the array of sample gradients
             self.dinputs[index] = np.dot(jacobian_matrix, single_dvalues)
-
 
 
 """
@@ -147,6 +138,8 @@ one hot encoded
  [1,0,0]]
 so everything that isn't the target gets nulled
 """
+
+
 class Loss:
     def calculate(self, output, y):
         sample_losses = self.forward(output, y)
@@ -160,17 +153,11 @@ class Loss_CategoricalCrossentropy(Loss):
         y_pred_clipped = np.clip(y_pred, 1e-7, 1 - 1e-7)
 
         if len(y_true.shape) == 1:
-            correct_confidences = y_pred_clipped[
-                range(samples), y_true
-            ]  # grab the element of row x of range samples equal to row x of y_true
+            correct_confidences = y_pred_clipped[range(samples), y_true]  # grab the element of row x of range samples equal to row x of y_true
         elif len(y_true.shape) == 2:  # if hot encoded, its a matrix
-            correct_confidences == np.sum(
-                y_pred_clipped * y_true, axis=1
-            )  # multiply each element in a row of y_pred * element in the same position of y_true
+            correct_confidences == np.sum(y_pred_clipped * y_true, axis=1)  # multiply each element in a row of y_pred * element in the same position of y_true
 
-        negative_log_likelihoods = -np.log(
-            correct_confidences
-        )  # simplified cross entropy
+        negative_log_likelihoods = -np.log(correct_confidences)  # simplified cross entropy
         return negative_log_likelihoods
 
     def backward(self, dvalues, y_true):
@@ -187,9 +174,7 @@ class Loss_CategoricalCrossentropy(Loss):
         dvalues_clipped = np.clip(dvalues, 1e-7, 1 - 1e-7)
 
         # Calculate gradient
-        self.dinputs = (
-            -y_true / dvalues_clipped
-        )  # d/dx (ln x) = 1/x derivative of natural log is 1/x
+        self.dinputs = -y_true / dvalues_clipped  # d/dx (ln x) = 1/x derivative of natural log is 1/x
         # Normalize gradient
         self.dinputs = self.dinputs / samples
 
@@ -198,6 +183,40 @@ def predict(softmax_outputs, targets):
     predictions = np.argmax(softmax_outputs, axis=1)
     accuracy = np.mean(predictions == targets)  # where predictions[x] == targets [x]
     return accuracy
+
+
+class AdamOptimizer:
+    def __init__(self, layers, learning_rate=0.001, beta1=0.9, beta2=0.999, epsilon=1e-8):
+        self.layers = layers
+        self.learning_rate = learning_rate
+        self.beta1 = beta1
+        self.beta2 = beta2
+        self.epsilon = epsilon
+        self.m_weights = [np.zeros_like(layer.weights) for layer in self.layers]
+        self.v_weights = [np.zeros_like(layer.weights) for layer in self.layers]
+        self.m_biases = [np.zeros_like(layer.biases) for layer in self.layers]
+        self.v_biases = [np.zeros_like(layer.biases) for layer in self.layers]
+        self.t = 0
+
+    def update(self):
+        self.t += 1
+        lr_t = self.learning_rate * np.sqrt(1 - self.beta2**self.t) / (1 - self.beta1**self.t)
+        
+        for i, layer in enumerate(self.layers):
+            # Update weights
+            self.m_weights[i] = self.beta1 * self.m_weights[i] + (1 - self.beta1) * layer.dweights
+            self.v_weights[i] = self.beta2 * self.v_weights[i] + (1 - self.beta2) * (layer.dweights**2)
+            m_hat = self.m_weights[i] / (1 - self.beta1**self.t)
+            v_hat = self.v_weights[i] / (1 - self.beta2**self.t)
+            layer.weights -= lr_t * m_hat / (np.sqrt(v_hat) + self.epsilon)
+            
+            # Update biases
+            self.m_biases[i] = self.beta1 * self.m_biases[i] + (1 - self.beta1) * layer.dbiases
+            self.v_biases[i] = self.beta2 * self.v_biases[i] + (1 - self.beta2) * (layer.dbiases**2)
+            m_hat_bias = self.m_biases[i] / (1 - self.beta1**self.t)
+            v_hat_bias = self.v_biases[i] / (1 - self.beta2**self.t)
+            layer.biases -= lr_t * m_hat_bias / (np.sqrt(v_hat_bias) + self.epsilon)
+
 
 
 X, y = spiral_data(points=100, classes=3)
@@ -210,6 +229,9 @@ dense1 = Layer_Dense(2, 256)  # n_inputs = number of dimensions of input
 dense2 = Layer_Dense(256, 256)
 dense3 = Layer_Dense(256, 128)
 dense4 = Layer_Dense(128, 3)  # output layer neurons = number of classes
+
+
+optimizer = AdamOptimizer([dense1, dense2, dense3, dense4])
 
 activation1 = Activation_Leaky_ReLU()
 activation2 = Activation_Leaky_ReLU()
@@ -228,15 +250,12 @@ for epoch in range(epochs):
     loss = loss_function.calculate(activation4.output, y)
     accuracy = predict(activation4.output, y)
 
-    # print(f"Loss:{loss},Accuracy:{accuracy}")
     if loss < lowest_loss:
         # print(f"New record:Iteration:{epoch}, Loss:{loss}, Accuracy:{accuracy}")
         lowest_loss = loss
     if epoch % 100 == 0:
         learning_rate *= 0.8
-        print(
-            f"Epoch {epoch}, Loss: {loss}, Accuracy: {accuracy}, Lowest Loss:{lowest_loss}"
-        )
+        print(f"Epoch {epoch}, Loss: {loss}, Accuracy: {accuracy}, Lowest Loss:{lowest_loss}")
     loss_function.backward(activation4.output, y)
     dense4.backward(loss_function.dinputs)
     activation3.backward(dense4.dinputs)
@@ -246,6 +265,8 @@ for epoch in range(epochs):
     activation1.backward(dense2.dinputs)
     dense1.backward(activation1.dinputs)
 
+    optimizer.update()
+"""
     dense1.weights -= learning_rate * dense1.dweights
     dense1.biases -= learning_rate * dense1.dbiases
     dense2.weights -= learning_rate * dense2.dweights
@@ -254,3 +275,4 @@ for epoch in range(epochs):
     dense3.biases -= learning_rate * dense3.dbiases
     dense4.weights -= learning_rate * dense4.dweights
     dense4.biases -= learning_rate * dense4.dbiases
+"""
