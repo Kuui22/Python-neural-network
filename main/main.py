@@ -225,10 +225,10 @@ X_std = np.std(X, axis=0) + 1e-8  #avoid dividing by zero
 X_normalized = (X - X_mean) / X_std
 
 lowest_loss = 999999
-initial_learning_rate = 0.0001
+initial_learning_rate = 1e-7
 #decay rate of the learning rate
-decay_rate = 0.1
-decay_steps = 1000
+decay_rate = 0.01
+decay_steps = 500
 
 loss_function = Loss_CategoricalCrossentropy()
 
@@ -263,7 +263,7 @@ for epoch in range(epochs):
     epoch_accuracy = 0
     num_batches = 0
 
-
+    #batch training
     for i in range(0, X_normalized.shape[0], batch_size):
         X_batch = X_shuffled[i : i + batch_size]
         y_batch = y_shuffled[i : i + batch_size]
