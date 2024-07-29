@@ -3,13 +3,14 @@ from numpy.random import MT19937, RandomState, SeedSequence
 # import matplotlib
 # np.random.seed(0) legacy
 
-#this was possible because of : https://github.com/Sentdex/nnfs_book , https://www.youtube.com/watch?v=SmZmBKc7Lrs
+# this was possible because of : https://github.com/Sentdex/nnfs_book , https://www.youtube.com/watch?v=SmZmBKc7Lrs
 
 
 seed_sequence = np.random.SeedSequence()
 rs = RandomState(MT19937(seed_sequence))
 
-#TODO: add batch normalization and dropout.
+# TODO: add batch normalization and dropout.
+
 
 def spiral_data(points, classes):
     X = np.zeros((points * classes, 2))
@@ -22,16 +23,17 @@ def spiral_data(points, classes):
         y[ix] = class_number
     return X, y
 
-def generate_new_dataset(points,classes):
-    X, y = spiral_data(points=points,classes=classes)
+
+def generate_new_dataset(points, classes):
+    X, y = spiral_data(points=points, classes=classes)
     X_mean = np.mean(X, axis=0)
     X_std = np.std(X, axis=0) + 1e-8  # avoid dividing by zero with addiction
     X_normalized = (X - X_mean) / X_std
-    return X_normalized,y
-    
+    return X_normalized, y
+
 
 class Layer_Dense:
-    def __init__(self, n_inputs, n_neurons, activation=None) -> None:
+    def __init__(self, n_inputs, n_neurons, activation=None, dropout=0.0) -> None:
         # He Initialization
         self.weights = np.sqrt(2.0 / n_inputs) * rs.randn(n_inputs, n_neurons)  # makes a matrix where rows = n inputs and cols = n neurons
         self.biases = np.zeros((1, n_neurons))  # make an array long as the number of neurons (number of outputs)
@@ -41,6 +43,8 @@ class Layer_Dense:
 
         self.dweights = np.zeros_like(self.weights)
         self.dbiases = np.zeros_like(self.biases)
+        self.dropoutrate = dropout
+        self.binary_mask = None
 
     def forward(self, inputs) -> None:
         # save inputs for backwards
@@ -90,7 +94,7 @@ class Activation_ReLU:
 
         # Zero gradient where input values were negative
         self.dinputs[self.inputs <= 0] = 0
-        
+
         return self.dinputs
 
 
@@ -112,7 +116,7 @@ class Activation_Leaky_ReLU:
 
         # Zero gradient where input values were negative
         self.dinputs[self.inputs <= 0] *= self.alpha
-        
+
         return self.dinputs
 
 
@@ -139,7 +143,7 @@ class Activation_Softmax:
             # Calculate sample-wise gradient
             # and add it to the array of sample gradients
             self.dinputs[index] = np.dot(jacobian_matrix, single_dvalues)
-            
+
         return self.dinputs
 
 
@@ -200,55 +204,84 @@ def predict(softmax_outputs, targets):
     accuracy = np.mean(predictions == targets)  # where predictions[x] == targets [x]
     return accuracy
 
-#create a network collection
-def create_network(n_input, n_output, hidden_activation, n_layers, neurons_per_layer=64):
+
+# create a network collection
+def create_network(n_input, n_output, hidden_activation, n_layers, neurons_per_layer=64, dropout=0.0):
+    if dropout > 0.99:
+        print(f"Select a valid dropout (0 to 0.99), yours is:{dropout}")
+        return
+
     layers = []
 
     for i in range(n_layers):
         if i == 0:
             # first layer with n input
-            layer = Layer_Dense(n_inputs=n_input, n_neurons=neurons_per_layer, activation=hidden_activation())
+            layer = Layer_Dense(n_inputs=n_input, n_neurons=neurons_per_layer, activation=hidden_activation(), dropout=dropout)
         elif i == n_layers - 1:
             # last layer
-            layer = Layer_Dense(n_inputs=layers[-1].n_neurons, n_neurons=n_output, activation=Activation_Softmax())
+            layer = Layer_Dense(n_inputs=layers[-1].n_neurons, n_neurons=n_output, activation=Activation_Softmax())  # dont add dropout to last layer
         else:
             # hidden layers
-            layer = Layer_Dense(n_inputs=layers[-1].n_neurons, n_neurons=neurons_per_layer, activation=hidden_activation())
+            layer = Layer_Dense(n_inputs=layers[-1].n_neurons, n_neurons=neurons_per_layer, activation=hidden_activation(), dropout=dropout)
         print(f"layer ninputs:{layer.n_inputs},neurons:{layer.n_neurons}")
         layers.append(layer)
-    
+
     return layers
 
-#take input and then output of previous layer
-def network_forward(network, inputs):
+
+# take input and then output of previous layer
+def network_forward(network, inputs, validation=False):
     prev_input = inputs
     for layer in network:
         layer.forward(prev_input)
         prev_input = layer.output
+        if layer.dropoutrate > 0 and not validation:
+            dropout_forward(layer)
 
     return network[-1].output
 
-#take loss dinputs and then dinputs of next layer
-def network_backward(network, loss_dinputs):
+
+# take loss dinputs and then dinputs of next layer
+def network_backward(network, loss_dinputs, validation=False):
     prev_dinputs = loss_dinputs
     for layer in reversed(network):
+        if layer.dropoutrate > 0 and not validation:
+            prev_dinputs = dropout_backward(layer, prev_dinputs)
         layer.backward(prev_dinputs)
         prev_dinputs = layer.dinputs
 
-def network_clip_gradients(network):
+
+def dropout_forward(layer):
+    rate = 1 - layer.dropoutrate
+    # Generate and save scaled mask
+    layer.binary_mask = np.random.binomial(1, rate, size=layer.output.shape) / rate
+    # Apply mask to output values
+    layer.output = layer.output * layer.binary_mask
+
+
+def dropout_backward(layer, dvalues):
+    rate = 1 - layer.dropoutrate
+    # Gradient on values
+    return dvalues * layer.binary_mask
+
+
+def network_clip_gradients(network, max_norm=9.0):
     for layer in network:
-        layer.clip_gradients()
+        layer.clip_gradients(max_norm)
+
 
 # L2 regularization (weight decay)
-def network_L2_regularization(network,l2_lambda):
+def network_L2_regularization(network, l2_lambda):
     for layer in network:
-            layer.dweights += 2 * l2_lambda * layer.weights
-            
-def learning_decay(initial_learning_rate,optimizer,decay_rate,epoch,decay_steps):
+        layer.dweights += 2 * l2_lambda * layer.weights
+
+
+def learning_decay(initial_learning_rate, optimizer, decay_rate, epoch, decay_steps):
     current_learning_rate = initial_learning_rate * (1.0 / (1.0 + decay_rate * epoch / decay_steps))
     optimizer.learning_rate = current_learning_rate
 
-#thanks Claude for optimizer
+
+# thanks Claude for optimizer
 class AdamOptimizer:
     def __init__(self, layers, learning_rate=0.001, beta1=0.9, beta2=0.999, epsilon=1e-8):
         self.layers = layers
@@ -281,10 +314,11 @@ class AdamOptimizer:
             v_hat_bias = self.v_biases[i] / (1 - self.beta2**self.t)
             layer.biases -= lr_t * m_hat_bias / (np.sqrt(v_hat_bias) + self.epsilon)
 
+
 spiral_points = 100
 spiral_classes = 3
-X_normalized, y = generate_new_dataset(spiral_points,spiral_classes)
-X_val_normalized, y_val =generate_new_dataset(spiral_points,spiral_classes)
+X_normalized, y = generate_new_dataset(spiral_points, spiral_classes)
+X_val_normalized, y_val = generate_new_dataset(spiral_points, spiral_classes)
 
 
 lowest_loss = 999999
@@ -298,7 +332,7 @@ loss_function = Loss_CategoricalCrossentropy()
 # Add L2 regularization, this gets applied to weights to avoid vanishing
 l2_lambda = 1e-4
 
-network = create_network(n_input=2,n_output=3,hidden_activation=Activation_Leaky_ReLU,n_layers=4)
+network = create_network(n_input=2, n_output=3, hidden_activation=Activation_Leaky_ReLU, n_layers=4, dropout=0.2)
 optimizer = AdamOptimizer(network, learning_rate=initial_learning_rate)
 epochs = 4000
 dataset_swap_interval = 500
@@ -323,46 +357,46 @@ for epoch in range(epochs):
         X_batch = X_shuffled[i : i + batch_size]
         y_batch = y_shuffled[i : i + batch_size]
 
-        #forward pass
-        forward_output = network_forward(network,X_batch)
+        # forward pass
+        forward_output = network_forward(network, X_batch)
         loss = loss_function.calculate(forward_output, y_batch)
         accuracy = predict(forward_output, y_batch)
 
-        epoch_loss += loss #add loss/acc of batch to total loss
+        epoch_loss += loss  # add loss/acc of batch to total loss
         epoch_accuracy += accuracy
         num_batches += 1
 
-        #backward pass
+        # backward pass
         loss_function.backward(forward_output, y_batch)
-        backward_output = network_backward(network,loss_function.dinputs)
-        
-        #opts
-        network_L2_regularization(network,l2_lambda=l2_lambda)
-        optimizer.update()
-        network_clip_gradients(network)
+        backward_output = network_backward(network, loss_function.dinputs)
 
-    epoch_loss /= num_batches #divide loss/acc per number of batches used
+        # opts
+        network_L2_regularization(network, l2_lambda=l2_lambda)
+        optimizer.update()
+        network_clip_gradients(network, 9.0)
+
+    epoch_loss /= num_batches  # divide loss/acc per number of batches used
     epoch_accuracy /= num_batches
 
     # Learning rate decay
-    learning_decay(initial_learning_rate=initial_learning_rate,optimizer=optimizer,decay_rate=decay_rate,epoch=epoch,decay_steps=decay_steps)
+    learning_decay(initial_learning_rate=initial_learning_rate, optimizer=optimizer, decay_rate=decay_rate, epoch=epoch, decay_steps=decay_steps)
 
     if epoch_loss < lowest_loss:
         lowest_loss = epoch_loss
 
     if epoch % 100 == 0:
-        val_output = network_forward(network,X_val_normalized)
-        val_loss = loss_function.calculate(val_output,y_val)
+        val_output = network_forward(network, X_val_normalized,validation=True)
+        val_loss = loss_function.calculate(val_output, y_val)
         val_accuracy = predict(val_output, y_val)
-        if(val_loss < lowest_val_loss):
+        if val_loss < lowest_val_loss:
             lowest_val_loss = val_loss
         print(f"Epoch {epoch}, Loss: {epoch_loss}, Accuracy: {epoch_accuracy}, Lowest Loss:{lowest_loss}, Val Loss:{val_loss}, Val acc:{val_accuracy} LVL:{lowest_val_loss}")
-        
-    if ((epoch > 0) and (epoch % dataset_swap_interval == 0)):
-        if(swap_container+99 < epoch):
-            X_normalized, y = generate_new_dataset(spiral_points,spiral_classes)
+
+    if (epoch > 0) and (epoch % dataset_swap_interval == 0):
+        if swap_container + 99 < epoch:
+            X_normalized, y = generate_new_dataset(spiral_points, spiral_classes)
             swap_container = epoch
-        if(dataset_swap_interval > 100):
-            dataset_swap_interval -= int(dataset_swap_interval/10)
-        if(dataset_swap_interval < 100):
+        if dataset_swap_interval > 100:
+            dataset_swap_interval -= int(dataset_swap_interval / 10)
+        if dataset_swap_interval < 100:
             dataset_swap_interval = 100
