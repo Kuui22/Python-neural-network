@@ -7,9 +7,6 @@ seed_sequence = np.random.SeedSequence()
 rs = RandomState(MT19937(seed_sequence))
 
 
-# TODO:backpropagation
-
-
 def spiral_data(points, classes):
     X = np.zeros((points * classes, 2))
     y = np.zeros(points * classes, dtype="uint8")
@@ -23,23 +20,24 @@ def spiral_data(points, classes):
 
 
 class Layer_Dense:
-    def __init__(self, n_inputs, n_neurons) -> None:
+    def __init__(self, n_inputs, n_neurons, activation=None) -> None:
         # He Initialization
         self.weights = np.sqrt(2.0 / n_inputs) * rs.randn(n_inputs, n_neurons)  # makes a matrix where rows = n inputs and cols = n neurons
         self.biases = np.zeros((1, n_neurons))  # make an array long as the number of neurons (number of outputs)
         self.n_neurons = n_neurons
         self.n_inputs = n_inputs
+        self.activation = activation
 
         self.dweights = np.zeros_like(self.weights)
         self.dbiases = np.zeros_like(self.biases)
 
-    def forward(self, inputs, activation=None) -> None:
+    def forward(self, inputs) -> None:
         # save inputs for backwards
         self.inputs = inputs
         self.output = np.dot(inputs, self.weights) + self.biases  # base dot operation + biases
         # print(f"activation is:{activation}")
-        if activation:
-            self.output = activation.forward(self.output)
+        if self.activation:
+            self.output = self.activation.forward(self.output)
 
     def backward(self, dvalues):
         # Gradients on parameters
@@ -47,8 +45,9 @@ class Layer_Dense:
         self.dbiases = np.sum(dvalues, axis=0, keepdims=True)
         # Gradient on values
         self.dinputs = np.dot(dvalues, self.weights.T)
-
         # self.clip_gradients()
+        if self.activation:
+            self.dinputs = self.activation.backward(self.dinputs)
 
     def clip_gradients(self, max_norm=9.0):
         # This norm is a measure of the magnitude of the gradient vector.
@@ -80,6 +79,8 @@ class Activation_ReLU:
 
         # Zero gradient where input values were negative
         self.dinputs[self.inputs <= 0] = 0
+        
+        return self.dinputs
 
 
 class Activation_Leaky_ReLU:
@@ -100,6 +101,8 @@ class Activation_Leaky_ReLU:
 
         # Zero gradient where input values were negative
         self.dinputs[self.inputs <= 0] *= self.alpha
+        
+        return self.dinputs
 
 
 class Activation_Softmax:
@@ -125,6 +128,8 @@ class Activation_Softmax:
             # Calculate sample-wise gradient
             # and add it to the array of sample gradients
             self.dinputs[index] = np.dot(jacobian_matrix, single_dvalues)
+            
+        return self.dinputs
 
 
 """
@@ -184,6 +189,41 @@ def predict(softmax_outputs, targets):
     accuracy = np.mean(predictions == targets)  # where predictions[x] == targets [x]
     return accuracy
 
+#create a network collection
+def create_network(n_input, n_output, hidden_activation, n_layers, neurons_per_layer=64):
+    layers = []
+
+    for i in range(n_layers):
+        if i == 0:
+            # first layer with n input
+            layer = Layer_Dense(n_inputs=n_input, n_neurons=neurons_per_layer, activation=hidden_activation())
+        elif i == n_layers - 1:
+            # last layer
+            layer = Layer_Dense(n_inputs=layers[-1].n_neurons, n_neurons=n_output, activation=Activation_Softmax())
+        else:
+            # hidden layers
+            layer = Layer_Dense(n_inputs=layers[-1].n_neurons, n_neurons=neurons_per_layer, activation=hidden_activation())
+
+        layers.append(layer)
+
+    return layers
+
+#take input and then output of previous layer
+def network_forward(network, inputs):
+    prev_input = inputs
+    for layer in network:
+        layer.forward(prev_input)
+        prev_input = layer.output
+
+    return network[-1].output
+
+#take loss dinputs and then dinputs of next layer
+def network_backward(network, loss_dinputs):
+    prev_dinputs = loss_dinputs
+    for layer in reversed(network):
+        layer.backward(prev_dinputs)
+        prev_dinputs = layer.dinputs
+
 
 class AdamOptimizer:
     def __init__(self, layers, learning_rate=0.001, beta1=0.9, beta2=0.999, epsilon=1e-8):
@@ -221,12 +261,12 @@ class AdamOptimizer:
 X, y = spiral_data(points=100, classes=3)
 # Normalize input data
 X_mean = np.mean(X, axis=0)
-X_std = np.std(X, axis=0) + 1e-8  #avoid dividing by zero
+X_std = np.std(X, axis=0) + 1e-8  # avoid dividing by zero
 X_normalized = (X - X_mean) / X_std
 
 lowest_loss = 999999
-initial_learning_rate = 1e-7
-#decay rate of the learning rate
+initial_learning_rate = 2e-7
+# decay rate of the learning rate
 decay_rate = 0.01
 decay_steps = 500
 
@@ -239,7 +279,7 @@ dense3 = Layer_Dense(64, 32)
 dense4 = Layer_Dense(32, 3)  # output layer neurons = number of classes
 
 # Add L2 regularization, this gets applied to weights to avoid vanishing
-l2_lambda = 0.001
+l2_lambda = 1e-4
 
 optimizer = AdamOptimizer([dense1, dense2, dense3, dense4], learning_rate=initial_learning_rate)
 
@@ -263,7 +303,7 @@ for epoch in range(epochs):
     epoch_accuracy = 0
     num_batches = 0
 
-    #batch training
+    # batch training
     for i in range(0, X_normalized.shape[0], batch_size):
         X_batch = X_shuffled[i : i + batch_size]
         y_batch = y_shuffled[i : i + batch_size]
@@ -279,13 +319,11 @@ for epoch in range(epochs):
         activation4.forward(dense4.output)
         loss = loss_function.calculate(activation4.output, y_batch)
         accuracy = predict(activation4.output, y_batch)
-        
-        
+
         epoch_loss += loss
         epoch_accuracy += accuracy
         num_batches += 1
-        
-        
+
         loss_function.backward(activation4.output, y_batch)
         dense4.backward(loss_function.dinputs)
         activation3.backward(dense4.dinputs)
@@ -298,8 +336,6 @@ for epoch in range(epochs):
         for layer in [dense1, dense2, dense3, dense4]:
             layer.dweights += 2 * l2_lambda * layer.weights
 
-
-
         optimizer.update()
 
         dense1.clip_gradients()
@@ -309,17 +345,16 @@ for epoch in range(epochs):
 
     epoch_loss /= num_batches
     epoch_accuracy /= num_batches
-    
+
     # Learning rate decay
     current_learning_rate = initial_learning_rate * (1.0 / (1.0 + decay_rate * epoch / decay_steps))
     optimizer.learning_rate = current_learning_rate
 
     if epoch_loss < lowest_loss:
         lowest_loss = epoch_loss
-        
+
     if epoch % 100 == 0:
         print(f"Epoch {epoch}, Loss: {epoch_loss}, Accuracy: {epoch_accuracy}, Lowest Loss:{lowest_loss}")
-    
 
 
 """
