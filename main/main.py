@@ -3,10 +3,13 @@ from numpy.random import MT19937, RandomState, SeedSequence
 # import matplotlib
 # np.random.seed(0) legacy
 
+#this was possible because of : https://github.com/Sentdex/nnfs_book , https://www.youtube.com/watch?v=SmZmBKc7Lrs
+
+
 seed_sequence = np.random.SeedSequence()
 rs = RandomState(MT19937(seed_sequence))
 
-#TODO: add batch normalization and dropout. also what if you switch dataset in the middle of training?
+#TODO: add batch normalization and dropout.
 
 def spiral_data(points, classes):
     X = np.zeros((points * classes, 2))
@@ -245,6 +248,7 @@ def learning_decay(initial_learning_rate,optimizer,decay_rate,epoch,decay_steps)
     current_learning_rate = initial_learning_rate * (1.0 / (1.0 + decay_rate * epoch / decay_steps))
     optimizer.learning_rate = current_learning_rate
 
+#thanks Claude for optimizer
 class AdamOptimizer:
     def __init__(self, layers, learning_rate=0.001, beta1=0.9, beta2=0.999, epsilon=1e-8):
         self.layers = layers
