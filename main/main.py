@@ -224,6 +224,17 @@ def network_backward(network, loss_dinputs):
         layer.backward(prev_dinputs)
         prev_dinputs = layer.dinputs
 
+def network_clip_gradients(network):
+    for layer in network:
+        layer.clip_gradients()
+
+def network_L2_regularization(network,l2_lambda):
+    for layer in network:
+            layer.dweights += 2 * l2_lambda * layer.weights
+            
+def learning_decay(initial_learning_rate,optimizer,decay_rate,epoch,decay_steps):
+    current_learning_rate = initial_learning_rate * (1.0 / (1.0 + decay_rate * epoch / decay_steps))
+    optimizer.learning_rate = current_learning_rate
 
 class AdamOptimizer:
     def __init__(self, layers, learning_rate=0.001, beta1=0.9, beta2=0.999, epsilon=1e-8):
