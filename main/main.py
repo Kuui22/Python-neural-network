@@ -296,8 +296,9 @@ l2_lambda = 1e-4
 
 network = create_network(n_input=2,n_output=3,hidden_activation=Activation_Leaky_ReLU,n_layers=4)
 optimizer = AdamOptimizer(network, learning_rate=initial_learning_rate)
-epochs = 5000
+epochs = 4000
 dataset_swap_interval = 500
+swap_container = 0
 
 # Implement mini-batch processing
 batch_size = 32
@@ -351,7 +352,13 @@ for epoch in range(epochs):
         val_accuracy = predict(val_output, y_val)
         if(val_loss < lowest_val_loss):
             lowest_val_loss = val_loss
-        print(f"Epoch {epoch}, Loss: {epoch_loss}, Accuracy: {epoch_accuracy}, Lowest Loss:{lowest_loss}, Val Loss:{val_loss}, Val acc:{val_accuracy} LVL{lowest_val_loss}")
+        print(f"Epoch {epoch}, Loss: {epoch_loss}, Accuracy: {epoch_accuracy}, Lowest Loss:{lowest_loss}, Val Loss:{val_loss}, Val acc:{val_accuracy} LVL:{lowest_val_loss}")
         
-    if (epoch % dataset_swap_interval == 0):
-        X_normalized, y = generate_new_dataset(spiral_points,spiral_classes)
+    if ((epoch > 0) and (epoch % dataset_swap_interval == 0)):
+        if(swap_container+99 < epoch):
+            X_normalized, y = generate_new_dataset(spiral_points,spiral_classes)
+            swap_container = epoch
+        if(dataset_swap_interval > 100):
+            dataset_swap_interval -= int(dataset_swap_interval/10)
+        if(dataset_swap_interval < 100):
+            dataset_swap_interval = 100
