@@ -40,14 +40,14 @@ class Layer_Dense:
             self.output = self.activation.forward(self.output)
 
     def backward(self, dvalues):
+        if self.activation:
+            dvalues = self.activation.backward(dvalues)
         # Gradients on parameters
         self.dweights = np.dot(self.inputs.T, dvalues)
         self.dbiases = np.sum(dvalues, axis=0, keepdims=True)
         # Gradient on values
         self.dinputs = np.dot(dvalues, self.weights.T)
         # self.clip_gradients()
-        if self.activation:
-            self.dinputs = self.activation.backward(self.dinputs)
 
     def clip_gradients(self, max_norm=9.0):
         # This norm is a measure of the magnitude of the gradient vector.
@@ -203,9 +203,9 @@ def create_network(n_input, n_output, hidden_activation, n_layers, neurons_per_l
         else:
             # hidden layers
             layer = Layer_Dense(n_inputs=layers[-1].n_neurons, n_neurons=neurons_per_layer, activation=hidden_activation())
-
+        print(f"layer ninputs:{layer.n_inputs},neurons:{layer.n_neurons}")
         layers.append(layer)
-
+    
     return layers
 
 #take input and then output of previous layer
@@ -228,6 +228,7 @@ def network_clip_gradients(network):
     for layer in network:
         layer.clip_gradients()
 
+# L2 regularization (weight decay)
 def network_L2_regularization(network,l2_lambda):
     for layer in network:
             layer.dweights += 2 * l2_lambda * layer.weights
@@ -282,22 +283,11 @@ decay_rate = 0.01
 decay_steps = 500
 
 loss_function = Loss_CategoricalCrossentropy()
-
-
-dense1 = Layer_Dense(2, 128)  # n_inputs = number of dimensions of input
-dense2 = Layer_Dense(128, 64)
-dense3 = Layer_Dense(64, 32)
-dense4 = Layer_Dense(32, 3)  # output layer neurons = number of classes
-
 # Add L2 regularization, this gets applied to weights to avoid vanishing
 l2_lambda = 1e-4
 
-optimizer = AdamOptimizer([dense1, dense2, dense3, dense4], learning_rate=initial_learning_rate)
-
-activation1 = Activation_Leaky_ReLU()
-activation2 = Activation_Leaky_ReLU()
-activation3 = Activation_Leaky_ReLU()
-activation4 = Activation_Softmax()
+network = create_network(n_input=2,n_output=3,hidden_activation=Activation_Leaky_ReLU,n_layers=4)
+optimizer = AdamOptimizer(network, learning_rate=initial_learning_rate)
 epochs = 100000
 
 # Implement mini-batch processing
@@ -319,62 +309,33 @@ for epoch in range(epochs):
         X_batch = X_shuffled[i : i + batch_size]
         y_batch = y_shuffled[i : i + batch_size]
 
-        # Forward pass
-        dense1.forward(X_batch)
-        activation1.forward(dense1.output)
-        dense2.forward(activation1.output)
-        activation2.forward(dense2.output)
-        dense3.forward(activation2.output)
-        activation3.forward(dense3.output)
-        dense4.forward(activation3.output)
-        activation4.forward(dense4.output)
-        loss = loss_function.calculate(activation4.output, y_batch)
-        accuracy = predict(activation4.output, y_batch)
+        #forward pass
+        forward_output = network_forward(network,X_batch)
+        loss = loss_function.calculate(forward_output, y_batch)
+        accuracy = predict(forward_output, y_batch)
 
         epoch_loss += loss
         epoch_accuracy += accuracy
         num_batches += 1
 
-        loss_function.backward(activation4.output, y_batch)
-        dense4.backward(loss_function.dinputs)
-        activation3.backward(dense4.dinputs)
-        dense3.backward(activation3.dinputs)
-        activation2.backward(dense3.dinputs)
-        dense2.backward(activation2.dinputs)
-        activation1.backward(dense2.dinputs)
-        dense1.backward(activation1.dinputs)
-        # L2 regularization (weight decay)
-        for layer in [dense1, dense2, dense3, dense4]:
-            layer.dweights += 2 * l2_lambda * layer.weights
-
+        #backward pass
+        loss_function.backward(forward_output, y_batch)
+        backward_output = network_backward(network,loss_function.dinputs)
+        
+        #opts
+        network_L2_regularization(network,l2_lambda=l2_lambda)
         optimizer.update()
-
-        dense1.clip_gradients()
-        dense2.clip_gradients()
-        dense3.clip_gradients()
-        dense4.clip_gradients()
+        network_clip_gradients(network)
 
     epoch_loss /= num_batches
     epoch_accuracy /= num_batches
 
     # Learning rate decay
-    current_learning_rate = initial_learning_rate * (1.0 / (1.0 + decay_rate * epoch / decay_steps))
-    optimizer.learning_rate = current_learning_rate
+    learning_decay(initial_learning_rate=initial_learning_rate,optimizer=optimizer,decay_rate=decay_rate,epoch=epoch,decay_steps=decay_steps)
 
     if epoch_loss < lowest_loss:
         lowest_loss = epoch_loss
 
     if epoch % 100 == 0:
         print(f"Epoch {epoch}, Loss: {epoch_loss}, Accuracy: {epoch_accuracy}, Lowest Loss:{lowest_loss}")
-
-
-"""
-    dense1.weights -= learning_rate * dense1.dweights
-    dense1.biases -= learning_rate * dense1.dbiases
-    dense2.weights -= learning_rate * dense2.dweights
-    dense2.biases -= learning_rate * dense2.dbiases
-    dense3.weights -= learning_rate * dense3.dweights
-    dense3.biases -= learning_rate * dense3.dbiases
-    dense4.weights -= learning_rate * dense4.dweights
-    dense4.biases -= learning_rate * dense4.dbiases
-"""
+        
