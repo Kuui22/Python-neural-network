@@ -6,6 +6,7 @@ from numpy.random import MT19937, RandomState, SeedSequence
 seed_sequence = np.random.SeedSequence()
 rs = RandomState(MT19937(seed_sequence))
 
+#TODO: add batch normalization and dropout. also what if you switch dataset in the middle of training?
 
 def spiral_data(points, classes):
     X = np.zeros((points * classes, 2))
@@ -18,6 +19,13 @@ def spiral_data(points, classes):
         y[ix] = class_number
     return X, y
 
+def generate_new_dataset(points,classes):
+    X, y = spiral_data(points=points,classes=classes)
+    X_mean = np.mean(X, axis=0)
+    X_std = np.std(X, axis=0) + 1e-8  # avoid dividing by zero with addiction
+    X_normalized = (X - X_mean) / X_std
+    return X_normalized,y
+    
 
 class Layer_Dense:
     def __init__(self, n_inputs, n_neurons, activation=None) -> None:
@@ -269,16 +277,10 @@ class AdamOptimizer:
             v_hat_bias = self.v_biases[i] / (1 - self.beta2**self.t)
             layer.biases -= lr_t * m_hat_bias / (np.sqrt(v_hat_bias) + self.epsilon)
 
-
-X, y = spiral_data(points=100, classes=3)
-X_val, y_val = spiral_data(points=100, classes=3)
-# Normalize input data
-X_mean = np.mean(X, axis=0)
-X_std = np.std(X, axis=0) + 1e-8  # avoid dividing by zero with addiction
-X_normalized = (X - X_mean) / X_std
-X_val_mean = np.mean(X_val, axis=0)
-X_val_std = np.std(X_val, axis=0) + 1e-8 
-X_val_normalized = (X_val - X_val_mean) / X_val_std
+spiral_points = 100
+spiral_classes = 3
+X_normalized, y = generate_new_dataset(spiral_points,spiral_classes)
+X_val_normalized, y_val =generate_new_dataset(spiral_points,spiral_classes)
 
 
 lowest_loss = 999999
