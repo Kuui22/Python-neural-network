@@ -271,13 +271,19 @@ class AdamOptimizer:
 
 
 X, y = spiral_data(points=100, classes=3)
+X_val, y_val = spiral_data(points=100, classes=3)
 # Normalize input data
 X_mean = np.mean(X, axis=0)
-X_std = np.std(X, axis=0) + 1e-8  # avoid dividing by zero
+X_std = np.std(X, axis=0) + 1e-8  # avoid dividing by zero with addiction
 X_normalized = (X - X_mean) / X_std
+X_val_mean = np.mean(X_val, axis=0)
+X_val_std = np.std(X_val, axis=0) + 1e-8 
+X_val_normalized = (X_val - X_val_mean) / X_val_std
+
 
 lowest_loss = 999999
-initial_learning_rate = 1e-5
+lowest_val_loss = 999999
+initial_learning_rate = 1e-4
 # decay rate of the learning rate
 decay_rate = 0.01
 decay_steps = 500
@@ -288,7 +294,7 @@ l2_lambda = 1e-4
 
 network = create_network(n_input=2,n_output=3,hidden_activation=Activation_Leaky_ReLU,n_layers=4)
 optimizer = AdamOptimizer(network, learning_rate=initial_learning_rate)
-epochs = 100000
+epochs = 4000
 
 # Implement mini-batch processing
 batch_size = 32
@@ -314,7 +320,7 @@ for epoch in range(epochs):
         loss = loss_function.calculate(forward_output, y_batch)
         accuracy = predict(forward_output, y_batch)
 
-        epoch_loss += loss
+        epoch_loss += loss #add loss/acc of batch to total loss
         epoch_accuracy += accuracy
         num_batches += 1
 
@@ -327,7 +333,7 @@ for epoch in range(epochs):
         optimizer.update()
         network_clip_gradients(network)
 
-    epoch_loss /= num_batches
+    epoch_loss /= num_batches #divide loss/acc per number of batches used
     epoch_accuracy /= num_batches
 
     # Learning rate decay
@@ -337,5 +343,10 @@ for epoch in range(epochs):
         lowest_loss = epoch_loss
 
     if epoch % 100 == 0:
-        print(f"Epoch {epoch}, Loss: {epoch_loss}, Accuracy: {epoch_accuracy}, Lowest Loss:{lowest_loss}")
+        val_output = network_forward(network,X_val_normalized)
+        val_loss = loss_function.calculate(val_output,y_val)
+        val_accuracy = predict(val_output, y_val)
+        if(val_loss < lowest_val_loss):
+            lowest_val_loss = val_loss
+        print(f"Epoch {epoch}, Loss: {epoch_loss}, Accuracy: {epoch_accuracy}, Lowest Loss:{lowest_loss}, Val Loss:{val_loss}, Val acc:{val_accuracy} LVL{lowest_val_loss}")
         
