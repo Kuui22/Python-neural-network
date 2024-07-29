@@ -277,7 +277,7 @@ X_std = np.std(X, axis=0) + 1e-8  # avoid dividing by zero
 X_normalized = (X - X_mean) / X_std
 
 lowest_loss = 999999
-initial_learning_rate = 2e-7
+initial_learning_rate = 1e-5
 # decay rate of the learning rate
 decay_rate = 0.01
 decay_steps = 500
